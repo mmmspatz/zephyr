@@ -46,8 +46,6 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <esp_ieee802154_dev.h>
 #include <esp_mac.h>
 
-#define IEEE802154_ESP32_TX_TIMEOUT_MS (100)
-
 struct ieee802154_esp32_rx_msg {
 	/* PHR at [0], PSDU bytes follow (length per PHR, max IEEE802154_MAX_PHY_PACKET_SIZE). */
 	uint8_t frame[IEEE802154_MAX_PHY_PACKET_SIZE + 1U];
@@ -377,13 +375,6 @@ static int esp32_tx(const struct device *dev, enum ieee802154_tx_mode tx_mode, s
 	k_sem_reset(&data->tx_wait);
 	data->tx_error = ESP_IEEE802154_TX_ERR_NONE;
 
-	/* Start from a clean state: a transmission that times out never reaches
-	 * handle_ack(), so pointers from the previous transmission would
-	 * otherwise stay live and be released a second time.
-	 */
-	data->ack_frame = NULL;
-	data->ack_frame_info = NULL;
-
 	switch (tx_mode) {
 	case IEEE802154_TX_MODE_DIRECT:
 		err = esp_ieee802154_transmit(data->tx_psdu, false);
@@ -418,12 +409,11 @@ static int esp32_tx(const struct device *dev, enum ieee802154_tx_mode tx_mode, s
 		return -ENOTSUP;
 	}
 
-	err = k_sem_take(&data->tx_wait, K_MSEC(IEEE802154_ESP32_TX_TIMEOUT_MS));
-
-	if (err != 0) {
-		LOG_ERR("TX timeout");
+	if (err != ESP_OK) {
 		return -EIO;
 	}
+
+	k_sem_take(&data->tx_wait, K_FOREVER);
 
 	switch (data->tx_error) {
 	case ESP_IEEE802154_TX_ERR_NONE:
